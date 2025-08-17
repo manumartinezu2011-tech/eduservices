@@ -1,0 +1,16 @@
+http://localhost:3000/#access_token=
+eyJhbGciOiJIUzI1NiIsImtpZCI6Ik5yTjA4NXFSUUxwMEtzeHkiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2hrZnVwd21qcXhycWJtaHN3Y25hLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI5MjVkNzRiYi0zYzJkLTQ2M2QtOTE0NS00OWY1OGUyODIzOTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzU1Mjk3MzE0LCJpYXQiOjE3NTUyOTM3MTQsImVtYWlsIjoibWFudS5tYXJ0aW5lei51MjAxMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJvdHAiLCJ0aW1lc3RhbXAiOjE3NTUyOTM3MTR9XSwic2Vzc2lvbl9pZCI6IjEzOTA0ODBkLTFkYzQtNDJjYi1hYzZhLTM3YzczMGZjNmNjMiIsImlzX2Fub255bW91cyI6ZmFsc2V9.JineAaPyak4PHriWyTS_mSjtB90FEbrFzGOlD065pp4&expires_at=1755297314
+&expires_in=3600&refresh_token=6yrrgmv6m67r&token_type=bearer&type=invite
+
+
+curl --location 'https://hkfupwmjqxrqbmhswcna.supabase.co/rest/v1/pedidos' \
+--header 'apikey: kjshdkhdkashdjsdah' \
+--header 'Authorization: Bearer djhjdhsjdhajdhsjdhajdad' \
+--header 'Content-Type: application/json' \
+--header 'Prefer: return=minimal' \
+--data '{
+  "producto": "Manzana",
+  "precio": 1450,
+  "cantidad": 10,
+  "comentario": "Descuento de 10%"
+}'
