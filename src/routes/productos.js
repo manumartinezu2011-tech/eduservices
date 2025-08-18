@@ -55,14 +55,14 @@ router.post('/', async (req, res) => {
  
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
-  const { estado } = req.body;
+  const estado = req.body.estado;
 
   if (!estado) {
     return res.status(400).json({ message: 'Faltan datos requeridos' });
   }
 
   try {
-    await productosController.updateProducto(id, estado);
+    await productosController.updateEstadoProducto(id, estado);
     res.json({ message: 'Producto actualizado correctamente' });
   } catch (error) {
     console.error('Error al actualizar el producto:', error);
