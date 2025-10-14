@@ -5,19 +5,21 @@ require('dotenv').config()
 
 const app = express()
 const PORT = process.env.PORT || 3001
+const CORS_ORIGIN = process.env.CORS_ORIGIN
+
 
 // Configuración de CORS para desarrollo local y red
 const corsOptions = {
   origin: function (origin, callback) {
     // Lista de orígenes permitidos
     const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'http://localhost:5173',
-      'http://localhost:4173',
-      'http://127.0.0.1:4173',
-      'http://192.168.1.82:4173',
-      'http://172.30.16.1:4173'
+      CORS_ORIGIN,
+      //      'http://localhost:3002',
+      //      'http://localhost:5173',
+      //      'http://localhost:4173',
+      //      'http://127.0.0.1:4173',
+      //      'http://192.168.1.82:4173',
+      //      'http://172.30.16.1:4173'
     ];
 
     // Permitir solicitudes sin origen (como apps móviles o Postman)
@@ -35,31 +37,17 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
-// Middleware
-/*
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3002',
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://192.168.1.82:4173',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
-  credentials: true
-}))
-  */
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
 // Database connection
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'freshfruit_erp',
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT || 5432,
+  port: process.env.DB_PORT,
 })
 
 // Test database connection
