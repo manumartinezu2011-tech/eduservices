@@ -7,6 +7,8 @@ const app = express()
 const PORT = process.env.PORT || 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN
 
+console.log("Se obtiene CORS_ORIGIN: ", CORS_ORIGIN);
+
 
 // Configuración de CORS para desarrollo local y red
 const corsOptions = {
