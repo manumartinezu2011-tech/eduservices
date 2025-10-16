@@ -11,16 +11,10 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN
 // Configuración de CORS para desarrollo local y red
 const corsOptions = {
   origin: function (origin, callback) {
-    // Lista de orígenes permitidos
-    const allowedOrigins = [
-      CORS_ORIGIN,
-      //      'http://localhost:3002',
-      //      'http://localhost:5173',
-      //      'http://localhost:4173',
-      //      'http://127.0.0.1:4173',
-      //      'http://192.168.1.82:4173',
-      //      'http://172.30.16.1:4173'
-    ];
+    // Lista de orígenes permitidos - soporta múltiples valores separados por coma
+    const allowedOrigins = CORS_ORIGIN
+      ? CORS_ORIGIN.split(',').map(o => o.trim()).filter(o => o)
+      : [];
 
     // Permitir solicitudes sin origen (como apps móviles o Postman)
     if (!origin) return callback(null, true);
@@ -29,6 +23,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('Origen bloqueado por CORS:', origin);
+      console.log('Orígenes permitidos:', allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
