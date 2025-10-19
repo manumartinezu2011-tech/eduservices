@@ -18,20 +18,29 @@ const corsOptions = {
       ? CORS_ORIGIN.split(',').map(o => o.trim()).filter(o => o)
       : [];
 
+    console.log('🔍 Solicitud CORS desde origen:', origin);
+    console.log('✅ Orígenes permitidos:', allowedOrigins);
+
     // Permitir solicitudes sin origen (como apps móviles o Postman)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ Solicitud sin origen permitida (Postman/mobile)');
+      return callback(null, true);
+    }
 
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ Origen permitido:', origin);
       callback(null, true);
     } else {
-      console.log('Origen bloqueado por CORS:', origin);
-      console.log('Orígenes permitidos:', allowedOrigins);
+      console.log('❌ Origen bloqueado por CORS:', origin);
+      console.log('💡 Agrega este origen a CORS_ORIGIN en .env:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 app.use(cors(corsOptions));
