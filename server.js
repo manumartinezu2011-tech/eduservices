@@ -5,61 +5,55 @@ require('dotenv').config()
 
 const app = express()
 const PORT = process.env.PORT || 3001
+const CORS_ORIGIN = process.env.CORS_ORIGIN
+
+console.log("Se obtiene CORS_ORIGIN: ", CORS_ORIGIN);
+
 
 // Configuración de CORS para desarrollo local y red
 const corsOptions = {
   origin: function (origin, callback) {
-    // Lista de orígenes permitidos
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'http://localhost:5173',
-      'http://localhost:4173',
-      'http://127.0.0.1:4173',
-      'http://192.168.1.82:3000/',
-      'http://172.30.16.1:3000/'
-    ];
+    // Lista de orígenes permitidos - soporta múltiples valores separados por coma
+    const allowedOrigins = CORS_ORIGIN
+      ? CORS_ORIGIN.split(',').map(o => o.trim()).filter(o => o)
+      : [];
+
+    console.log('🔍 Solicitud CORS desde origen:', origin);
+    console.log('✅ Orígenes permitidos:', allowedOrigins);
 
     // Permitir solicitudes sin origen (como apps móviles o Postman)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ Solicitud sin origen permitida (Postman/mobile)');
+      return callback(null, true);
+    }
 
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ Origen permitido:', origin);
       callback(null, true);
     } else {
-      console.log('Origen bloqueado por CORS:', origin);
+      console.log('❌ Origen bloqueado por CORS:', origin);
+      console.log('💡 Agrega este origen a CORS_ORIGIN en .env:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
-// Middleware
-/*
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3002',
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://192.168.1.82:4173',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
-  credentials: true
-}))
-  */
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
 // Database connection
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'freshfruit_erp',
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT || 5432,
+  port: process.env.DB_PORT,
 })
 
 // Test database connection
@@ -89,8 +83,6 @@ const dashboardRoutes = require('./routes/dashboard')
 const profileRoutes = require('./routes/profile')
 const settingsRoutes = require('./routes/settings')
 const reportsRoutes = require('./routes/reports')
-const unitsRoutes = require('./routes/units')
-const paymentsRoutes = require('./routes/payments')
 
 // Authentication routes (now using real PostgreSQL backend)
 const authRoutes = require('./routes/auth')
@@ -108,8 +100,6 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/reports', reportsRoutes)
-app.use('/api/units', unitsRoutes)
-app.use('/api/payments', paymentsRoutes)
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
