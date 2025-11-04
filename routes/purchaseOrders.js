@@ -12,23 +12,32 @@ const pool = new Pool({
 })
 
 // Helper function to generate purchase order number
-async function generatePurchaseOrderNumber() {
+async function generatePurchaseOrderNumber(trackingNumber = null) {
   const result = await pool.query(`
     SELECT order_number
     FROM purchase_orders
-    WHERE order_number ~ '^PO-[0-9]+$'
-    ORDER BY CAST(SUBSTRING(order_number FROM 4) AS INTEGER) DESC
+    WHERE order_number ~ '^PO-[0-9]+'
+    ORDER BY created_at DESC
     LIMIT 1
   `)
 
-  let nextNumber = 'PO-001'
+  let sequentialNumber = 'PO-001'
   if (result.rows.length > 0) {
     const lastNumber = result.rows[0].order_number
-    const numberPart = parseInt(lastNumber.split('-')[1])
-    nextNumber = `PO-${String(numberPart + 1).padStart(3, '0')}`
+    // Extract the sequential part (PO-XXX)
+    const match = lastNumber.match(/^PO-(\d+)/)
+    if (match) {
+      const numberPart = parseInt(match[1])
+      sequentialNumber = `PO-${String(numberPart + 1).padStart(3, '0')}`
+    }
   }
 
-  return nextNumber
+  // If tracking number is provided, append it
+  if (trackingNumber) {
+    return `${sequentialNumber}-${trackingNumber}`
+  }
+
+  return sequentialNumber
 }
 
 // GET /api/purchase-orders - Get all purchase orders with filtering
@@ -228,11 +237,12 @@ router.post('/', [
       notes,
       subtotal,
       tax_amount,
-      total_amount
+      total_amount,
+      tracking_number
     } = req.body
 
-    // Generate purchase order number
-    const orderNumber = await generatePurchaseOrderNumber()
+    // Generate purchase order number with tracking number
+    const orderNumber = await generatePurchaseOrderNumber(tracking_number)
 
     // Calculate totals if not provided
     let calculatedSubtotal = subtotal || 0

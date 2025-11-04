@@ -178,7 +178,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', [
   body('name').notEmpty().withMessage('Name is required'),
   body('email').optional({ nullable: true, checkFalsy: true }).isString(),
-  body('phone').optional({ nullable: true, checkFalsy: true }).isString().isLength({ min: 8, max: 20 }),
+  body('phone').optional({ nullable: true, checkFalsy: true }).isString().isLength({ min: 6, max: 20 }),
   body('address').optional().isString(),
   body('type').isIn(['individual', 'business']).withMessage('Type must be individual or business'),
   body('credit_limit').optional().isNumeric(),
@@ -252,7 +252,7 @@ router.post('/', [
 router.put('/:id', [
   body('name').notEmpty().withMessage('Name is required'),
   body('email').optional({ nullable: true, checkFalsy: true }).isString(),
-  body('phone').optional({ nullable: true, checkFalsy: true }).isString().isLength({ min: 8, max: 20 }),
+  body('phone').optional({ nullable: true, checkFalsy: true }).isString().isLength({ min: 6, max: 20 }),
   body('address').optional().isString(),
   body('type').isIn(['individual', 'business']).withMessage('Type must be individual or business'),
   body('credit_limit').optional().isNumeric(),

@@ -48,8 +48,6 @@ router.get('/products', async (req, res) => {
         p.min_stock,
         p.unit,
         p.supplier as supplier,
-        NULL as expiry_date,
-        NULL as image_url,
         p.status,
         p.created_at,
         p.updated_at,
@@ -196,8 +194,6 @@ router.get('/products/:id', async (req, res) => {
         p.min_stock,
         p.unit,
         'Sin proveedor' as supplier,
-        NULL as expiry_date,
-        NULL as image_url,
         p.status,
         p.created_at,
         p.updated_at,
@@ -296,8 +292,6 @@ router.post('/products', [
       unit = 'kg',
       supplier,
       barcode,
-      expiry_date,
-      image_url,
       status = 'active'
     } = req.body
 
@@ -317,15 +311,15 @@ router.post('/products', [
     }
 
     const query = `
-      INSERT INTO products 
-      (name, description, category_id, sku, price, cost, stock, min_stock, unit, supplier, expiry_date, image_url, status) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      INSERT INTO products
+      (name, description, category_id, sku, price, cost, stock, min_stock, unit, supplier, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `
 
     const result = await pool.query(query, [
       name, description, category_id, sku, price, cost, stock, min_stock,
-      unit, supplier, expiry_date, image_url, status
+      unit, supplier, status
     ])
 
     // Create initial stock movement if stock > 0
@@ -387,8 +381,6 @@ router.put('/products/:id', [
       unit,
       supplier,
       barcode,
-      expiry_date,
-      image_url,
       status
     } = req.body
 
@@ -476,18 +468,6 @@ router.put('/products/:id', [
     if (supplier !== undefined) {
       updateFields.push(`supplier = $${paramIndex}`)
       queryParams.push(supplier)
-      paramIndex++
-    }
-
-    if (expiry_date !== undefined) {
-      updateFields.push(`expiry_date = $${paramIndex}`)
-      queryParams.push(expiry_date)
-      paramIndex++
-    }
-
-    if (image_url !== undefined) {
-      updateFields.push(`image_url = $${paramIndex}`)
-      queryParams.push(image_url)
       paramIndex++
     }
 
@@ -762,7 +742,7 @@ router.post('/categories', [
   }
 
   try {
-    const { name, slug, description, color = '#10B981', parent_id } = req.body
+    const { name, slug, description, color = 'bg-gray-100 text-gray-800' } = req.body
 
     // Check if slug already exists
     const existingCategory = await pool.query(
@@ -778,12 +758,12 @@ router.post('/categories', [
     }
 
     const query = `
-      INSERT INTO categories (name, slug, description, color, parent_id)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO categories (name, slug, description, color)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `
 
-    const result = await pool.query(query, [name, slug, description, color, parent_id])
+    const result = await pool.query(query, [name, slug, description, color])
 
     res.status(201).json({
       success: true,
@@ -792,6 +772,126 @@ router.post('/categories', [
     })
   } catch (error) {
     console.error('Error creating category:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message
+    })
+  }
+})
+
+// PUT /api/inventory/categories/:id - Update category
+router.put('/categories/:id', [
+  body('name').notEmpty().withMessage('Category name is required'),
+  body('slug').notEmpty().withMessage('Category slug is required'),
+  body('color').optional().isString()
+], async (req, res) => {
+  const errors = validationResult(req)
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      errors: errors.array()
+    })
+  }
+
+  try {
+    const { id } = req.params
+    const { name, slug, description, color } = req.body
+
+    // Check if category exists
+    const existingCategory = await pool.query(
+      'SELECT * FROM categories WHERE id = $1',
+      [id]
+    )
+
+    if (existingCategory.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Category not found'
+      })
+    }
+
+    // Check if slug is already used by another category
+    const slugCheck = await pool.query(
+      'SELECT id FROM categories WHERE slug = $1 AND id != $2',
+      [slug, id]
+    )
+
+    if (slugCheck.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Category with this slug already exists'
+      })
+    }
+
+    const query = `
+      UPDATE categories
+      SET name = $2, slug = $3, description = $4, color = $5, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `
+
+    const result = await pool.query(query, [id, name, slug, description, color])
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Category updated successfully'
+    })
+  } catch (error) {
+    console.error('Error updating category:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message
+    })
+  }
+})
+
+// DELETE /api/inventory/categories/:id - Delete category
+router.delete('/categories/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Check if category exists
+    const category = await pool.query(
+      'SELECT * FROM categories WHERE id = $1',
+      [id]
+    )
+
+    if (category.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Category not found'
+      })
+    }
+
+    // Check if category is used by products
+    const hasProducts = await pool.query(
+      'SELECT COUNT(*) as count FROM products WHERE category_id = $1',
+      [id]
+    )
+
+    if (parseInt(hasProducts.rows[0].count) > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete category with associated products'
+      })
+    }
+
+    // Soft delete
+    await pool.query(
+      'UPDATE categories SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [id]
+    )
+
+    res.json({
+      success: true,
+      message: 'Category deleted successfully'
+    })
+  } catch (error) {
+    console.error('Error deleting category:', error)
     res.status(500).json({
       success: false,
       error: 'Internal server error',
