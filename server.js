@@ -83,6 +83,8 @@ const dashboardRoutes = require('./routes/dashboard')
 const profileRoutes = require('./routes/profile')
 const settingsRoutes = require('./routes/settings')
 const reportsRoutes = require('./routes/reports')
+const unitsRoutes = require('./routes/units')
+const paymentsRoutes = require('./routes/payments')
 
 // Authentication routes (now using real PostgreSQL backend)
 const authRoutes = require('./routes/auth')
@@ -100,6 +102,8 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/reports', reportsRoutes)
+app.use('/api/units', unitsRoutes)
+app.use('/api/payments', paymentsRoutes)
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
