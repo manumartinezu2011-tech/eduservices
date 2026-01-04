@@ -250,7 +250,7 @@ router.post('/', [
       calculatedSubtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0)
     }
 
-    const calculatedTaxAmount = tax_amount || (calculatedSubtotal * 0.19)
+    const calculatedTaxAmount = 0 // Tax removed as per requirement
     const calculatedTotal = total_amount || (calculatedSubtotal + calculatedTaxAmount)
 
     // Create purchase order

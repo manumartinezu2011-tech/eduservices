@@ -17,17 +17,17 @@ router.use(authenticateToken)
 // GET /api/reports/sales - Sales reports with various metrics
 router.get('/sales', async (req, res) => {
   try {
-    const { 
-      period = 'month', 
-      start_date, 
+    const {
+      period = 'month',
+      start_date,
       end_date,
-      group_by = 'day' 
+      group_by = 'day'
     } = req.query
-    
+
     let dateFilter = ''
     let groupByClause = ''
     let selectClause = ''
-    
+
     // Set up date filtering (using order_date instead of created_at)
     if (start_date && end_date) {
       dateFilter = `AND o.order_date >= '${start_date}' AND o.order_date <= '${end_date}'`
@@ -47,7 +47,7 @@ router.get('/sales', async (req, res) => {
           break
       }
     }
-    
+
     // Set up grouping (using order_date instead of created_at)
     switch (group_by) {
       case 'day':
@@ -66,7 +66,7 @@ router.get('/sales', async (req, res) => {
         groupByClause = "DATE(o.order_date)"
         selectClause = "DATE(o.order_date) as period"
     }
-    
+
     // Simplified sales query
     let baseQuery = ''
     if (start_date && end_date) {
@@ -81,26 +81,44 @@ router.get('/sales', async (req, res) => {
       }
       baseQuery = `AND o.order_date >= CURRENT_DATE - INTERVAL '${intervalDays} days'`
     }
-    
+
     const salesReportQuery = `
+      WITH OrderStats AS (
+        SELECT 
+           COUNT(o.id) as total_orders,
+           COUNT(DISTINCT o.customer_id) as unique_customers,
+           COALESCE(SUM(o.subtotal), 0) as total_sales,
+           COALESCE(SUM(o.tax_amount), 0) as total_tax,
+           COALESCE(SUM(o.total), 0) as total_revenue,
+           COALESCE(AVG(o.total), 0) as average_order_value,
+           COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_orders,
+           COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) as cancelled_orders
+        FROM orders o
+        WHERE 1=1 ${baseQuery}
+      ),
+      ItemStats AS (
+        SELECT COALESCE(SUM(oi.quantity), 0) as total_items_sold
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        WHERE 1=1 ${baseQuery}
+      )
       SELECT 
         CURRENT_DATE as period,
-        COALESCE(COUNT(DISTINCT CASE WHEN o.id IS NOT NULL THEN o.id END), 0) as total_orders,
-        COALESCE(COUNT(DISTINCT CASE WHEN o.customer_id IS NOT NULL THEN o.customer_id END), 0) as unique_customers,
-        COALESCE(SUM(CASE WHEN o.subtotal IS NOT NULL THEN o.subtotal ELSE 0 END), 0) as total_sales,
-        COALESCE(SUM(CASE WHEN o.tax_amount IS NOT NULL THEN o.tax_amount ELSE 0 END), 0) as total_tax,
-        COALESCE(SUM(CASE WHEN o.total IS NOT NULL THEN o.total ELSE 0 END), 0) as total_revenue,
-        COALESCE(AVG(CASE WHEN o.total IS NOT NULL THEN o.total END), 0) as average_order_value,
-        COALESCE(COUNT(CASE WHEN o.status = 'completed' THEN 1 END), 0) as completed_orders,
-        COALESCE(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END), 0) as cancelled_orders,
-        COALESCE(SUM(CASE WHEN oi.quantity IS NOT NULL THEN oi.quantity ELSE 0 END), 0) as total_items_sold
-      FROM orders o
-      LEFT JOIN order_items oi ON o.id = oi.order_id
-      WHERE 1=1 ${baseQuery}
+        os.total_orders,
+        os.unique_customers,
+        os.total_sales,
+        os.total_tax,
+        os.total_revenue,
+        os.average_order_value,
+        os.completed_orders,
+        os.cancelled_orders,
+        ist.total_items_sold
+      FROM OrderStats os
+      CROSS JOIN ItemStats ist
     `
-    
+
     const salesResult = await pool.query(salesReportQuery)
-    
+
     // Get top products for the same period
     const topProductsQuery = `
       SELECT 
@@ -122,9 +140,9 @@ router.get('/sales', async (req, res) => {
       ORDER BY total_revenue DESC
       LIMIT 10
     `
-    
+
     const productsResult = await pool.query(topProductsQuery)
-    
+
     // Get customer analysis - create separate date filter for subquery
     let customerDateFilter = ''
     if (start_date && end_date) {
@@ -139,7 +157,7 @@ router.get('/sales', async (req, res) => {
       }
       customerDateFilter = `AND order_date >= CURRENT_DATE - INTERVAL '${intervalDays} days'`
     }
-    
+
     const customersQuery = `
       SELECT 
         COUNT(DISTINCT c.id) as total_customers,
@@ -159,9 +177,9 @@ router.get('/sales', async (req, res) => {
       LEFT JOIN orders o ON c.id = o.customer_id -- AND o.deleted_at IS NULL -- temporarily disabled ${baseQuery}
       WHERE 1=1 -- deleted_at check temporarily disabled
     `
-    
+
     const customersResult = await pool.query(customersQuery)
-    
+
     // Format results
     const salesData = salesResult.rows.map(row => ({
       period: row.period,
@@ -175,7 +193,7 @@ router.get('/sales', async (req, res) => {
       cancelled_orders: parseInt(row.cancelled_orders) || 0,
       total_items_sold: parseFloat(row.total_items_sold) || 0
     }))
-    
+
     const topProducts = productsResult.rows.map(row => ({
       ...row,
       total_quantity_sold: parseFloat(row.total_quantity_sold) || 0,
@@ -183,9 +201,9 @@ router.get('/sales', async (req, res) => {
       orders_count: parseInt(row.orders_count) || 0,
       price: parseFloat(row.price) || 0
     }))
-    
+
     const customerStats = customersResult.rows[0] || {}
-    
+
     res.json({
       success: true,
       data: {
@@ -203,10 +221,10 @@ router.get('/sales', async (req, res) => {
     })
   } catch (error) {
     console.error('Error generating sales report:', error)
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     })
   }
 })
@@ -226,8 +244,8 @@ router.get('/inventory', async (req, res) => {
         p.cost,
         p.unit,
         c.name as category_name,
-        (p.stock * p.price) as stock_value,
-        (p.stock * p.cost) as stock_cost,
+        (GREATEST(p.stock, 0) * COALESCE(p.price, 0)) as stock_value,
+        (GREATEST(p.stock, 0) * COALESCE(p.cost, 0)) as stock_cost,
         CASE 
           WHEN p.stock <= 0 THEN 'out_of_stock'
           WHEN p.stock <= p.min_stock THEN 'low_stock'
@@ -238,9 +256,9 @@ router.get('/inventory', async (req, res) => {
       WHERE 1=1 -- deleted_at check temporarily disabled AND p.status = 'active'
       ORDER BY stock_value DESC
     `
-    
+
     const inventoryResult = await pool.query(inventoryQuery)
-    
+
     // Stock movements summary
     const movementsQuery = `
       SELECT 
@@ -253,17 +271,17 @@ router.get('/inventory', async (req, res) => {
       GROUP BY sm.movement_type
       ORDER BY total_quantity DESC
     `
-    
+
     const movementsResult = await pool.query(movementsQuery)
-    
+
     // Category analysis
     const categoryQuery = `
       SELECT 
         COALESCE(c.name, 'Sin Categoría') as category_name,
         COALESCE(c.color, '#6B7280') as category_color,
         COUNT(p.id) as products_count,
-        SUM(p.stock * p.price) as category_value,
-        SUM(p.stock * p.cost) as category_cost,
+        SUM(GREATEST(p.stock, 0) * COALESCE(p.price, 0)) as category_value,
+        SUM(GREATEST(p.stock, 0) * COALESCE(p.cost, 0)) as category_cost,
         AVG(p.stock) as average_stock,
         COUNT(*) FILTER (WHERE p.stock <= p.min_stock) as low_stock_products
       FROM products p
@@ -272,14 +290,14 @@ router.get('/inventory', async (req, res) => {
       GROUP BY c.name, c.color
       ORDER BY category_value DESC
     `
-    
+
     const categoryResult = await pool.query(categoryQuery)
-    
+
     // Calculate totals
     const totals = inventoryResult.rows.reduce((acc, product) => {
       acc.total_value += parseFloat(product.stock_value) || 0
       acc.total_cost += parseFloat(product.stock_cost) || 0
-      
+
       switch (product.stock_status) {
         case 'out_of_stock':
           acc.out_of_stock_count++
@@ -291,7 +309,7 @@ router.get('/inventory', async (req, res) => {
           acc.in_stock_count++
           break
       }
-      
+
       return acc
     }, {
       total_value: 0,
@@ -300,7 +318,7 @@ router.get('/inventory', async (req, res) => {
       low_stock_count: 0,
       in_stock_count: 0
     })
-    
+
     // Format results
     const inventory = inventoryResult.rows.map(row => ({
       ...row,
@@ -311,14 +329,14 @@ router.get('/inventory', async (req, res) => {
       stock_value: parseFloat(row.stock_value) || 0,
       stock_cost: parseFloat(row.stock_cost) || 0
     }))
-    
+
     const movements = movementsResult.rows.map(row => ({
       ...row,
       movement_count: parseInt(row.movement_count) || 0,
       total_quantity: parseFloat(row.total_quantity) || 0,
       average_quantity: parseFloat(row.average_quantity) || 0
     }))
-    
+
     const categories = categoryResult.rows.map(row => ({
       ...row,
       products_count: parseInt(row.products_count) || 0,
@@ -327,7 +345,7 @@ router.get('/inventory', async (req, res) => {
       average_stock: parseFloat(row.average_stock) || 0,
       low_stock_products: parseInt(row.low_stock_products) || 0
     }))
-    
+
     res.json({
       success: true,
       data: {
@@ -347,10 +365,10 @@ router.get('/inventory', async (req, res) => {
     })
   } catch (error) {
     console.error('Error generating inventory report:', error)
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     })
   }
 })
@@ -359,7 +377,7 @@ router.get('/inventory', async (req, res) => {
 router.get('/customers', async (req, res) => {
   try {
     const { period = 'month' } = req.query
-    
+
     let dateFilter = ''
     switch (period) {
       case 'week':
@@ -375,7 +393,7 @@ router.get('/customers', async (req, res) => {
         dateFilter = "AND o.order_date >= CURRENT_DATE - INTERVAL '365 days'"
         break
     }
-    
+
     // Customer performance analysis
     const customerAnalysisQuery = `
       SELECT 
@@ -397,9 +415,9 @@ router.get('/customers', async (req, res) => {
       ORDER BY total_spent DESC
       LIMIT 50
     `
-    
+
     const customersResult = await pool.query(customerAnalysisQuery)
-    
+
     // Customer segmentation
     const segmentationQuery = `
       WITH customer_metrics AS (
@@ -424,9 +442,9 @@ router.get('/customers', async (req, res) => {
       FROM customer_metrics
       GROUP BY type
     `
-    
+
     const segmentationResult = await pool.query(segmentationQuery)
-    
+
     // New vs returning customers
     const newVsReturningQuery = `
       WITH customer_first_order AS (
@@ -446,9 +464,9 @@ router.get('/customers', async (req, res) => {
       WHERE o.order_date >= CURRENT_DATE - INTERVAL '30 days'
         -- AND o.deleted_at IS NULL -- temporarily disabled
     `
-    
+
     const newVsReturningResult = await pool.query(newVsReturningQuery)
-    
+
     // Format results
     const customers = customersResult.rows.map(row => ({
       ...row,
@@ -458,7 +476,7 @@ router.get('/customers', async (req, res) => {
       days_with_orders: parseInt(row.days_with_orders) || 0,
       balance: parseFloat(row.balance) || 0
     }))
-    
+
     const segmentation = segmentationResult.rows.map(row => ({
       ...row,
       customer_count: parseInt(row.customer_count) || 0,
@@ -468,9 +486,9 @@ router.get('/customers', async (req, res) => {
       high_value_customers: parseInt(row.high_value_customers) || 0,
       inactive_customers: parseInt(row.inactive_customers) || 0
     }))
-    
+
     const customerFlow = newVsReturningResult.rows[0] || {}
-    
+
     res.json({
       success: true,
       data: {
@@ -486,10 +504,10 @@ router.get('/customers', async (req, res) => {
     })
   } catch (error) {
     console.error('Error generating customer report:', error)
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     })
   }
 })
@@ -498,7 +516,7 @@ router.get('/customers', async (req, res) => {
 router.get('/financial', async (req, res) => {
   try {
     const { period = 'month' } = req.query
-    
+
     let dateFilter = ''
     switch (period) {
       case 'week':
@@ -516,7 +534,7 @@ router.get('/financial', async (req, res) => {
       default:
         dateFilter = "WHERE o.order_date >= CURRENT_DATE - INTERVAL '30 days'"
     }
-    
+
     // Revenue and profit analysis
     const financialQuery = `
       SELECT 
@@ -530,9 +548,9 @@ router.get('/financial', async (req, res) => {
         AND o.status IN ('completed', 'processing')
         AND (o.deleted_at IS NULL OR o.deleted_at IS NULL)
     `
-    
+
     const financialResult = await pool.query(financialQuery)
-    
+
     // Payment method analysis
     const paymentMethodQuery = `
       SELECT 
@@ -547,9 +565,9 @@ router.get('/financial', async (req, res) => {
       GROUP BY payment_method
       ORDER BY total_amount DESC
     `
-    
+
     const paymentMethodResult = await pool.query(paymentMethodQuery)
-    
+
     // Outstanding invoices
     const outstandingInvoicesQuery = `
       SELECT 
@@ -561,12 +579,12 @@ router.get('/financial', async (req, res) => {
       WHERE status = 'pending'
         -- -- AND deleted_at IS NULL temporarily disabled -- temporarily disabled
     `
-    
+
     const outstandingResult = await pool.query(outstandingInvoicesQuery)
-    
+
     const financial = financialResult.rows[0] || {}
     const outstanding = outstandingResult.rows[0] || {}
-    
+
     res.json({
       success: true,
       data: {
@@ -594,10 +612,10 @@ router.get('/financial', async (req, res) => {
     })
   } catch (error) {
     console.error('Error generating financial report:', error)
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     })
   }
 })
