@@ -19,11 +19,12 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT 
         c.*,
-        COALESCE(COUNT(DISTINCT o.id), 0) as total_orders,
-        COALESCE(SUM(o.total), 0) as total_spent,
-        MAX(o.created_at) as last_order_date
+        (SELECT COALESCE(COUNT(id), 0) FROM orders WHERE customer_id = c.id) as total_orders,
+        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.id) as total_spent,
+        (SELECT MAX(created_at) FROM orders WHERE customer_id = c.id) as last_order_date,
+        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE customer_id = c.id AND status = 'completed') as total_paid,
+        (SELECT MAX(payment_date) FROM payments WHERE customer_id = c.id AND status = 'completed') as last_payment_date
       FROM customers c
-      LEFT JOIN orders o ON c.id = o.customer_id
       WHERE 1=1 -- deleted_at check temporarily disabled
     `
 
@@ -88,13 +89,19 @@ router.get('/', async (req, res) => {
     const total = parseInt(countResult.rows[0].total)
 
     // Format the results
-    const customers = result.rows.map(customer => ({
-      ...customer,
-      total_orders: parseInt(customer.total_orders) || 0,
-      total_spent: parseFloat(customer.total_spent) || 0,
-      balance: parseFloat(customer.balance) || 0,
-      credit_limit: parseFloat(customer.credit_limit) || 0
-    }))
+    const customers = result.rows.map(customer => {
+      const totalSpent = parseFloat(customer.total_spent) || 0
+      const totalPaid = parseFloat(customer.total_paid) || 0
+
+      return {
+        ...customer,
+        total_orders: parseInt(customer.total_orders) || 0,
+        total_spent: totalSpent,
+        total_paid: totalPaid,
+        balance: totalSpent - totalPaid, // Calculate balance dynamically
+        credit_limit: parseFloat(customer.credit_limit) || 0
+      }
+    })
 
     res.json({
       success: true,
@@ -166,6 +173,101 @@ router.get('/:id', async (req, res) => {
     })
   } catch (error) {
     console.error('Error fetching customer:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message
+    })
+  }
+})
+
+// GET /api/customers/:id/account - Get customer account details (ledger)
+router.get('/:id/account', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { start_date, end_date } = req.query
+
+    // 1. Get Customer Details
+    const customerQuery = `
+      SELECT id, name, email, phone, address, tax_id, type, credit_limit, balance, created_at
+      FROM customers
+      WHERE id = $1
+    `
+    const customerResult = await pool.query(customerQuery, [id])
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Customer not found' })
+    }
+
+    const customer = customerResult.rows[0]
+
+    // 2. Get Orders (Debits)
+    let ordersQuery = `
+      SELECT 
+        id, order_number, total, status, created_at as date, 'order' as type, 
+        payment_status
+      FROM orders
+      WHERE customer_id = $1
+    `
+    const orderParams = [id]
+
+    if (start_date) {
+      ordersQuery += ` AND created_at >= $2`
+      orderParams.push(start_date)
+    }
+
+    const ordersResult = await pool.query(ordersQuery, orderParams)
+
+    // 3. Get Payments (Credits)
+    let paymentsQuery = `
+      SELECT 
+        id, payment_number, amount, payment_method, payment_date as date, 'payment' as type,
+        status, reference_number
+      FROM payments
+      WHERE customer_id = $1 AND status = 'completed'
+    `
+    const paymentParams = [id]
+
+    if (start_date) {
+      paymentsQuery += ` AND payment_date >= $2`
+      paymentParams.push(start_date)
+    }
+
+    const paymentsResult = await pool.query(paymentsQuery, paymentParams)
+
+    // 4. Combine and Sort
+    const transactions = [
+      ...ordersResult.rows.map(o => ({
+        ...o,
+        amount: parseFloat(o.total),
+        is_debit: true // Increases debt
+      })),
+      ...paymentsResult.rows.map(p => ({
+        ...p,
+        amount: parseFloat(p.amount),
+        is_credit: true // Decreases debt
+      }))
+    ].sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort descending (newest first)
+
+    // Calculate dynamic balance
+    const totalSales = ordersResult.rows.reduce((sum, order) => sum + parseFloat(order.total), 0)
+    const totalPaid = paymentsResult.rows.reduce((sum, payment) => sum + parseFloat(payment.amount), 0)
+    const calculatedBalance = totalSales - totalPaid
+
+    res.json({
+      success: true,
+      data: {
+        customer: {
+          ...customer,
+          balance: calculatedBalance, // Use calculated balance
+          credit_limit: parseFloat(customer.credit_limit)
+        },
+        transactions
+      }
+    })
+
+  } catch (error) {
+    console.error('Error fetching customer account:', error)
     res.status(500).json({
       success: false,
       error: 'Internal server error',
