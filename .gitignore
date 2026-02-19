@@ -3,3 +3,7 @@ dist
 .env
 database
 md
+.env.production
+docker-compose.yml
+auth-mock.js
+.env.example
