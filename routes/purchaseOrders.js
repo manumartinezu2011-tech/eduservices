@@ -12,23 +12,32 @@ const pool = new Pool({
 })
 
 // Helper function to generate purchase order number
-async function generatePurchaseOrderNumber() {
+async function generatePurchaseOrderNumber(trackingNumber = null) {
   const result = await pool.query(`
     SELECT order_number
     FROM purchase_orders
-    WHERE order_number ~ '^PO-[0-9]+$'
-    ORDER BY CAST(SUBSTRING(order_number FROM 4) AS INTEGER) DESC
+    WHERE order_number ~ '^PO-[0-9]+'
+    ORDER BY created_at DESC
     LIMIT 1
   `)
 
-  let nextNumber = 'PO-001'
+  let sequentialNumber = 'PO-001'
   if (result.rows.length > 0) {
     const lastNumber = result.rows[0].order_number
-    const numberPart = parseInt(lastNumber.split('-')[1])
-    nextNumber = `PO-${String(numberPart + 1).padStart(3, '0')}`
+    // Extract the sequential part (PO-XXX)
+    const match = lastNumber.match(/^PO-(\d+)/)
+    if (match) {
+      const numberPart = parseInt(match[1])
+      sequentialNumber = `PO-${String(numberPart + 1).padStart(3, '0')}`
+    }
   }
 
-  return nextNumber
+  // If tracking number is provided, append it
+  if (trackingNumber) {
+    return `${sequentialNumber}-${trackingNumber}`
+  }
+
+  return sequentialNumber
 }
 
 // GET /api/purchase-orders - Get all purchase orders with filtering
@@ -228,11 +237,16 @@ router.post('/', [
       notes,
       subtotal,
       tax_amount,
-      total_amount
+      total_amount,
+      tracking_number,
+      status // Extract status from body
     } = req.body
 
-    // Generate purchase order number
-    const orderNumber = await generatePurchaseOrderNumber()
+    // Default status to 'pending' if not provided, though frontend sends 'received'
+    const finalStatus = status || 'pending'
+
+    // Generate purchase order number with tracking number
+    const orderNumber = await generatePurchaseOrderNumber(tracking_number)
 
     // Calculate totals if not provided
     let calculatedSubtotal = subtotal || 0
@@ -240,21 +254,21 @@ router.post('/', [
       calculatedSubtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0)
     }
 
-    const calculatedTaxAmount = tax_amount || (calculatedSubtotal * 0.19)
+    const calculatedTaxAmount = 0 // Tax removed as per requirement
     const calculatedTotal = total_amount || (calculatedSubtotal + calculatedTaxAmount)
 
     // Create purchase order
     const purchaseOrderQuery = `
       INSERT INTO purchase_orders
       (supplier_id, order_number, subtotal, tax_amount, total_amount,
-       expected_delivery_date, notes, order_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+       expected_delivery_date, notes, order_date, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $8)
       RETURNING *
     `
 
     const purchaseOrderResult = await client.query(purchaseOrderQuery, [
       supplier_id, orderNumber, calculatedSubtotal, calculatedTaxAmount, calculatedTotal,
-      expected_delivery_date, notes
+      expected_delivery_date, notes, finalStatus
     ])
 
     const purchaseOrder = purchaseOrderResult.rows[0]
@@ -275,12 +289,28 @@ router.post('/', [
       const quantity = parseFloat(item.quantity)
       const unitCost = parseFloat(item.unit_cost)
       const totalCost = quantity * unitCost
+      const receivedQuantity = finalStatus === 'received' ? quantity : 0
 
       await client.query(`
         INSERT INTO purchase_order_items
-        (purchase_order_id, product_id, quantity, unit_cost, total_cost)
-        VALUES ($1, $2, $3, $4, $5)
-      `, [purchaseOrder.id, item.product_id, quantity, unitCost, totalCost])
+        (purchase_order_id, product_id, quantity, unit_cost, total_cost, received_quantity)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [purchaseOrder.id, item.product_id, quantity, unitCost, totalCost, receivedQuantity])
+
+      // Update inventory if status is received
+      if (finalStatus === 'received') {
+        const currentStock = parseFloat(product.stock)
+        const newStock = currentStock + quantity
+
+        await client.query('UPDATE products SET stock = $2 WHERE id = $1', [item.product_id, newStock])
+
+        // Create stock movement
+        await client.query(`
+          INSERT INTO stock_movements
+          (product_id, movement_type, quantity, reference_type, reference_id, notes)
+          VALUES ($1, 'in', $2, 'purchase', $3, $4)
+        `, [item.product_id, quantity, purchaseOrder.id, `Purchase order ${orderNumber} received on creation`])
+      }
     }
 
     await client.query('COMMIT')

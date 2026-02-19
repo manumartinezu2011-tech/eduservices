@@ -79,7 +79,7 @@ router.get('/invoices', async (req, res) => {
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `
 
-    queryParams.push(limit, (page - 1) * limit)
+    queryParams.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit))
 
     const result = await pool.query(query, queryParams)
 
@@ -138,7 +138,7 @@ router.get('/invoices', async (req, res) => {
     })
   } catch (error) {
     console.error('Error fetching invoices:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: error.message })
   }
 })
 
@@ -175,7 +175,54 @@ router.get('/invoices/:id', async (req, res) => {
       GROUP BY i.id, c.name, c.email, c.phone, c.address
     `
 
-    const result = await pool.query(query, [id])
+    const queryWithPayments = `
+      SELECT 
+        i.*,
+        c.name as customer_name,
+        c.email as customer_email,
+        c.phone as customer_phone,
+        c.address as customer_address,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', ii.id,
+                'product_id', ii.product_id,
+                'product_name', ii.product_name,
+                'quantity', ii.quantity,
+                'unit_price', ii.unit_price,
+                'total', ii.total_price
+              )
+            )
+            FROM invoice_items ii
+            WHERE ii.invoice_id = i.id
+          ),
+          '[]'::json
+        ) as items,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', p.id,
+                'amount', p.amount,
+                'payment_date', p.payment_date,
+                'payment_method', p.payment_method,
+                'reference_number', p.reference_number,
+                'notes', p.notes
+              ) ORDER BY p.payment_date DESC
+            )
+            FROM payments p
+            WHERE p.invoice_id = i.id
+          ),
+          '[]'::json
+        ) as payments
+      FROM invoices i
+      LEFT JOIN customers c ON i.customer_id = c.id
+      WHERE i.id = $1
+      GROUP BY i.id, c.name, c.email, c.phone, c.address
+    `
+
+    const result = await pool.query(queryWithPayments, [id])
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Invoice not found' })
@@ -241,6 +288,8 @@ router.post('/invoices', async (req, res) => {
 
     const invoice = invoiceResult.rows[0]
 
+
+
     // Create invoice items if provided
     if (items && items.length > 0) {
       for (const item of items) {
@@ -256,6 +305,43 @@ router.post('/invoices', async (req, res) => {
           item.unit_price
         ])
       }
+    }
+
+    // Create payment record if paid_amount > 0
+    // We expect payment_method and payment_notes in the request body for the initial payment
+    const { payment_method, payment_notes, user_id } = req.body
+    if (paid_amount && parseFloat(paid_amount) > 0) {
+      // Generate payment number using DB function
+      const paymentNumberResult = await client.query('SELECT generate_payment_number() as payment_number');
+      let payment_number = paymentNumberResult.rows[0].payment_number;
+
+      console.log('Generated payment number from DB:', payment_number);
+
+      // Fallback if DB function returns null
+      if (!payment_number) {
+        console.warn('Warning: generate_payment_number() returned null. using fallback.');
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 1000);
+        payment_number = `PAY-${timestamp}-${random}`;
+      }
+
+      const paymentQuery = `
+        INSERT INTO payments
+        (invoice_id, user_id, amount, payment_date, payment_method, payment_number, reference_number, notes, status, created_at)
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, 'completed', NOW())
+      `
+      // For initial payment, generate a reference number if not provided
+      const refNumber = `INIT-${invoice_number}`
+
+      await client.query(paymentQuery, [
+        invoice.id,
+        user_id || null, // allow null if not provided
+        parseFloat(paid_amount),
+        payment_method || 'cash',
+        payment_number,
+        refNumber,
+        payment_notes || 'Pago inicial al crear factura'
+      ])
     }
 
     await client.query('COMMIT')
@@ -293,7 +379,7 @@ router.post('/invoices', async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK')
     console.error('Error creating invoice:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: error.message })
   } finally {
     client.release()
   }
