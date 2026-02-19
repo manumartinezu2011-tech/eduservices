@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: freshfruit_backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # Adjust these variables as needed for your environment
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: postgres # User requested connection to external network, assuming service name 'postgres'
+      DB_PORT: 5432
+      DB_NAME: edu_db_erp
+      DB_USER: casaos
+      DB_PASSWORD: casaos
+    networks:
+      - postgres_postgres_network
+
+networks:
+  postgres_postgres_network:
+    external: true
