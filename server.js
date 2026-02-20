@@ -5,7 +5,7 @@ const { Pool } = require('pg')
 require('dotenv').config()
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT
 // Force restart 123456789
 
 // Configuración de CORS para desarrollo local y red
@@ -14,13 +14,11 @@ const corsOptions = {
     // Lista de orígenes permitidos
     const allowedOrigins = [
       'http://localhost:3000',
-      'http://localhost:3002',
       'http://localhost:5173',
       'http://localhost:4173',
-      'http://127.0.0.1:4173',
-      'http://192.168.1.82:3000/',
-      'http://172.30.16.1:3000/',
+      'http://127.0.0.1:3001',
       'http://147.79.104.88',
+      'http://147.79.104.88:3001',
       'http://erpedu-erpweb-kuac0y-edf950-147-79-104-88.traefik.me',
       'http://erpedu-erpweb-kuac0y-edf950-147-79-104-88.traefik.me:3000'
     ];
@@ -46,11 +44,11 @@ app.use(express.urlencoded({ extended: true }))
 
 // Database connection
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'freshfruit_erp',
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT || 5432,
+  port: process.env.DB_PORT,
 })
 
 // Test database connection
