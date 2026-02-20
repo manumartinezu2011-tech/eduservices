@@ -20,7 +20,7 @@ const corsOptions = {
       'http://127.0.0.1:4173',
       'http://192.168.1.82:3000/',
       'http://172.30.16.1:3000/',
-      'http://192.168.1.83:3000'
+      'http://147.79.104.88'
     ];
 
     // Permitir solicitudes sin origen (como apps móviles o Postman)
