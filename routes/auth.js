@@ -719,7 +719,7 @@ router.get('/users', authenticateToken, async (req, res) => {
 router.put('/users/:id', [
   body('name').optional().notEmpty().withMessage('Name cannot be empty'),
   body('email').optional().isEmail().withMessage('Valid email is required'),
-  body('role').optional().isIn(['admin', 'manager', 'vendedor', 'user']).withMessage('Invalid role')
+  body('role').optional().isIn(['admin', 'manager', 'vendedor', 'user', 'cajero']).withMessage('Invalid role')
 ], authenticateToken, async (req, res) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {

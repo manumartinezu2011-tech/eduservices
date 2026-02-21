@@ -18,9 +18,9 @@ const corsOptions = {
       'http://localhost:4173',
       'http://127.0.0.1:3001',
       'http://147.79.104.88',
-      'http://147.79.104.88:3001',
+      'http://147.79.104.88:3000',
       'http://erpedu-erpweb-kuac0y-edf950-147-79-104-88.traefik.me',
-      'http://erpedu-erpweb-kuac0y-edf950-147-79-104-88.traefik.me:3000'
+      'http://erpedu-erpweb-kuac0y-edf950-147-79-104-88.traefik.me:3000',
     ];
 
     // Permitir solicitudes sin origen (como apps móviles o Postman)
